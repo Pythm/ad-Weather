@@ -12,13 +12,16 @@ This app is designed to work with [AppDaemon](https://github.com/AppDaemon/appda
 
 ## How Does It Work?
 
-This is a "helper" app that relies on outside weather data. You can listen to the weather updates with:
+This is a "helper" app to other apps that relies on outside weather data. You can listen to the weather updates with:
 
 ```python
         self.ADapi.listen_event(self.weather_event, 'WEATHER_CHANGE',
             namespace = self.HASS_namespace
         )
 ```
+### Apps configured to use this app:
+- [ad-ClimateCommander](https://github.com/Pythm/ad-ClimateCommander)
+- [ad-ElectricalManagement](https://github.com/Pythm/ad-ElectricalManagement)
 
 # Installation and configuration
 1. Clone this repository into your [AppDaemon](https://appdaemon.readthedocs.io/en/latest/) `apps` directory.

@@ -3,7 +3,7 @@
     @Pythm / https://github.com/Pythm
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 import adbase as ad
 import datetime
@@ -50,6 +50,8 @@ class Weather(ad.ADBase):
         self.anemometer = self.args.get('anemometer', None)
         self.backup_wind_handler = None
 
+        self.weather_event_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
+
             # Setup Outside temperatures
         if self.weather_sensor == None:
             sensor_states = self.ADapi.get_state(entity='weather', namespace = self.HASS_namespace)
@@ -75,6 +77,17 @@ class Weather(ad.ADBase):
                 attribute = 'temperature',
                 namespace = self.HASS_namespace
             )
+            try:
+                self.out_temp = float(self.ADapi.get_state(self.weather_sensor,
+                    attribute = 'temperature',
+                    namespace = self.HASS_namespace
+                ))
+            except Exception as err:
+                self.ADapi.log(
+                    f"Was not able to get temperature from {self.weather_sensor}. "
+                    f"Please use https://www.home-assistant.io/integrations/met/ or make a pull requeset to support other integrations. {err}",
+                    level = 'INFO'
+                )
 
         if 'outside_temperature' in self.args:
             self.outside_temperature = self.args['outside_temperature']
@@ -198,6 +211,21 @@ class Weather(ad.ADBase):
             )
 
 
+    def send_weather_update(self):
+        """ Sends a new event with updated sensor data
+        """
+        if self.ADapi.datetime(aware=True) - self.weather_event_last_update > datetime.timedelta(minutes = 5):
+            self.ADapi.fire_event('WEATHER_CHANGE',
+                temp = self.out_temp,
+                rain = self.rain_amount,
+                wind = self.wind_amount,
+                lux = self.out_lux,
+                cloud_cover = self.cloud_cover,
+                namespace = self.HASS_namespace
+            )
+            self.weather_event_last_update = self.ADapi.datetime(aware=True)
+
+
         # Set proper value when weather sensors is updated
     def outsideTemperatureUpdated(self, entity, attribute, old, new, kwargs) -> None:
         """ Updates out temperature from sensor
@@ -256,7 +284,7 @@ class Weather(ad.ADBase):
                             ))
 
         except TypeError as te:
-            self.ADapi.log(f"Not able to get all values from {self.weather_sensor}. {te}", level = 'INFO')
+            self.ADapi.log(f"Not able to get all values from {self.weather_sensor}. {te}", level = 'DEBUG')
         else:
             if (
                 self.ADapi.datetime(aware=True) - self.outTemp_last_update1 > datetime.timedelta(minutes = 20)
@@ -271,14 +299,7 @@ class Weather(ad.ADBase):
                 self.wind_amount = weather_wind_amount
 
 
-            self.ADapi.fire_event('WEATHER_CHANGE',
-                temp = self.out_temp,
-                rain = self.rain_amount,
-                wind = self.wind_amount,
-                lux = self.out_lux,
-                cloud_cover = self.cloud_cover,
-                namespace = self.HASS_namespace
-            )
+            self.send_weather_update()
 
 
     def newOutTemp(self) -> None:
@@ -289,14 +310,7 @@ class Weather(ad.ADBase):
             or self.outTemp2 >= self.outTemp1
         ):
             self.out_temp = self.outTemp1
-            self.ADapi.fire_event('WEATHER_CHANGE',
-                temp = self.out_temp,
-                rain = self.rain_amount,
-                wind = self.wind_amount,
-                lux = self.out_lux,
-                cloud_cover = self.cloud_cover,
-                namespace = self.HASS_namespace
-            )
+            self.send_weather_update()
 
         self.outTemp_last_update1 = self.ADapi.datetime(aware=True)
 
@@ -309,14 +323,7 @@ class Weather(ad.ADBase):
             or self.outTemp1 >= self.outTemp2
         ):
             self.out_temp = self.outTemp2
-            self.ADapi.fire_event('WEATHER_CHANGE',
-                temp = self.out_temp,
-                rain = self.rain_amount,
-                wind = self.wind_amount,
-                lux = self.out_lux,
-                cloud_cover = self.cloud_cover,
-                namespace = self.HASS_namespace
-            )
+            self.send_weather_update()
 
         self.outTemp_last_update2 = self.ADapi.datetime(aware=True)
 
@@ -331,14 +338,7 @@ class Weather(ad.ADBase):
         else:
             self.rain_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
 
-            self.ADapi.fire_event('WEATHER_CHANGE',
-                temp = self.out_temp,
-                rain = self.rain_amount,
-                wind = self.wind_amount,
-                lux = self.out_lux,
-                cloud_cover = self.cloud_cover,
-                namespace = self.HASS_namespace
-            )
+            self.send_weather_update()
 
 
     def anemometerUpdated(self, entity, attribute, old, new, kwargs) -> None:
@@ -351,14 +351,7 @@ class Weather(ad.ADBase):
         else:
             self.wind_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
 
-            self.ADapi.fire_event('WEATHER_CHANGE',
-                temp = self.out_temp,
-                rain = self.rain_amount,
-                wind = self.wind_amount,
-                lux = self.out_lux,
-                cloud_cover = self.cloud_cover,
-                namespace = self.HASS_namespace
-            )
+            self.send_weather_update()
 
 
         # Lux / weather
@@ -404,6 +397,7 @@ class Weather(ad.ADBase):
             or self.outLux1 >= self.outLux2
         ):
             self.out_lux = self.outLux1
+            self.send_weather_update()
 
         self.lux_last_update1 = self.ADapi.datetime(aware=True)
 
@@ -450,5 +444,12 @@ class Weather(ad.ADBase):
             or self.outLux2 >= self.outLux1
         ):
             self.out_lux = self.outLux2
+            self.send_weather_update()
 
         self.lux_last_update2 = self.ADapi.datetime(aware=True)
+
+
+    def getOutTemp(self) -> float:
+        """ Returns outdoor temperature
+        """
+        return self.out_temp
