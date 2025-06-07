@@ -127,7 +127,6 @@ class Weather(ad.ADBase):
             self.ADapi.log("Aborting weather setup", level = 'WARNING')
             return
 
-
             # Setup Rain sensor
         if self.rain_sensor:
             self.ADapi.listen_state(self.rainSensorUpdated, self.rain_sensor,
@@ -146,7 +145,6 @@ class Weather(ad.ADBase):
                 self.ADapi.log(f"Rain sensor not valid. {e}", level = 'WARNING')
                 self.rain_amount = 0.0
 
-
             # Setup Wind sensor
         if self.anemometer:
             self.ADapi.listen_state(self.anemometerUpdated, self.anemometer,
@@ -161,11 +159,9 @@ class Weather(ad.ADBase):
                     f"Was not able to get wind_speed from {self.anemometer}. {ve}",
                     level = 'DEBUG'
                 )
-
             except Exception as e:
                 self.ADapi.log(f"Anemometer sensor not valid. {e}", level = 'WARNING')
                 self.wind_amount = 0.0
-
 
             # Setup Outdoor Lux sensor
         if 'OutLux_sensor' in self.args:
@@ -210,7 +206,6 @@ class Weather(ad.ADBase):
                 namespace = self.MQTT_namespace
             )
 
-
     def send_weather_update(self):
         """ Sends a new event with updated sensor data
         """
@@ -224,7 +219,6 @@ class Weather(ad.ADBase):
                 namespace = self.HASS_namespace
             )
             self.weather_event_last_update = self.ADapi.datetime(aware=True)
-
 
         # Set proper value when weather sensors is updated
     def outsideTemperatureUpdated(self, entity, attribute, old, new, kwargs) -> None:
@@ -240,7 +234,6 @@ class Weather(ad.ADBase):
         else:
             self.newOutTemp()
 
-
     def outsideTemperature2Updated(self, entity, attribute, old, new, kwargs) -> None:
         """ Updates out temperature from sensor
         """
@@ -253,7 +246,6 @@ class Weather(ad.ADBase):
             )
         else:
             self.newOutTemp2()
-
 
     def WeatherSensorUpdated(self, entity, attribute, old, new, kwargs) -> None:
         """ Updates out temperature from backup sensor
@@ -298,9 +290,7 @@ class Weather(ad.ADBase):
             if self.ADapi.datetime(aware=True) - self.wind_last_update > datetime.timedelta(minutes = 20):  
                 self.wind_amount = weather_wind_amount
 
-
             self.send_weather_update()
-
 
     def newOutTemp(self) -> None:
         """ Sets new out temp after comparing sensor 1 and 2 and time since the other was last updated.
@@ -314,7 +304,6 @@ class Weather(ad.ADBase):
 
         self.outTemp_last_update1 = self.ADapi.datetime(aware=True)
 
-
     def newOutTemp2(self) -> None:
         """ Sets new out temp after comparing sensor 1 and 2 and time since the other was last updated.
         """
@@ -327,7 +316,6 @@ class Weather(ad.ADBase):
 
         self.outTemp_last_update2 = self.ADapi.datetime(aware=True)
 
-
     def rainSensorUpdated(self, entity, attribute, old, new, kwargs) -> None:
         """ Updates rain amount from sensor
         """
@@ -337,9 +325,7 @@ class Weather(ad.ADBase):
             self.ADapi.log(f"Not able to set new rain amount: {new}. {ve}", level = 'DEBUG')
         else:
             self.rain_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
-
             self.send_weather_update()
-
 
     def anemometerUpdated(self, entity, attribute, old, new, kwargs) -> None:
         """ Updates WIND_AMOUNT from sensor
@@ -350,9 +336,7 @@ class Weather(ad.ADBase):
             self.ADapi.log(f"Not able to set new wind amount: {new}. {ve}", level = 'DEBUG')
         else:
             self.wind_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
-
             self.send_weather_update()
-
 
         # Lux / weather
     def out_lux_state(self, entity, attribute, old, new, kwargs) -> None:
@@ -369,7 +353,6 @@ class Weather(ad.ADBase):
             self.ADapi.log(f"Not able to get new outlux. Exception: {e}", level = 'WARNING')
         else:
             self.newOutLux()
-
 
     def out_lux_event_MQTT(self, event_name, data, kwargs) -> None:
         """ Updates lux data from MQTT event.
@@ -388,7 +371,6 @@ class Weather(ad.ADBase):
                 self.outLux1 = float(lux_data['value']) # Zwave sensor
                 self.newOutLux()
 
-
     def newOutLux(self) -> None:
         """ Sets new lux data after comparing sensor 1 and 2 and time since the other was last updated.
         """
@@ -400,7 +382,6 @@ class Weather(ad.ADBase):
             self.send_weather_update()
 
         self.lux_last_update1 = self.ADapi.datetime(aware=True)
-
 
     def out_lux_state2(self, entity, attribute, old, new, kwargs) -> None:
         """ Updates lux data from sensors.
@@ -416,7 +397,6 @@ class Weather(ad.ADBase):
             self.ADapi.log(f"Not able to get new outlux. Exception: {e}", level = 'WARNING')
         else:
             self.newOutLux2()
-
 
     def out_lux_event_MQTT2(self, event_name, data, kwargs) -> None:
         """ Updates lux data from MQTT event.
@@ -435,7 +415,6 @@ class Weather(ad.ADBase):
                 self.outLux2 = float(lux_data['value']) # Zwave sensor
                 self.newOutLux2()
 
-
     def newOutLux2(self) -> None:
         """ Sets new lux data after comparing sensor 1 and 2 and time since the other was last updated.
         """
@@ -447,7 +426,6 @@ class Weather(ad.ADBase):
             self.send_weather_update()
 
         self.lux_last_update2 = self.ADapi.datetime(aware=True)
-
 
     def getOutTemp(self) -> float:
         """ Returns outdoor temperature
