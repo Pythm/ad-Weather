@@ -5,7 +5,7 @@
 
 __version__ = "0.1.1"
 
-import adbase as ad
+from appdaemon import adbase as ad
 import datetime
 import math
 import json
@@ -53,7 +53,7 @@ class Weather(ad.ADBase):
         self.weather_event_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
 
             # Setup Outside temperatures
-        if self.weather_sensor == None:
+        if self.weather_sensor is None:
             sensor_states = self.ADapi.get_state(entity='weather', namespace = self.HASS_namespace)
             for sensor_id, sensor_states in sensor_states.items():
                 if 'weather.' in sensor_id:
@@ -116,8 +116,8 @@ class Weather(ad.ADBase):
 
             # Check if there are sensors to use
         if (
-            self.outside_temperature == None 
-            and self.weather_sensor == None
+            self.outside_temperature is None 
+            and self.weather_sensor is None
         ):
             self.ADapi.log(
                 "Outside temperature not configured. Please provide sensors or install Met.no in Home Assistant. "
