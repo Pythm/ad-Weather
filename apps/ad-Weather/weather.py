@@ -17,7 +17,7 @@ class Weather(ad.ADBase):
         self.ADapi = self.get_ad_api()
             # Namespaces
         self.HASS_namespace = self.args.get('HASS_namespace', 'default')
-        self.MQTT_namespace = self.args.get('MQTT_namespace', 'default')
+        self.MQTT_namespace = self.args.get('MQTT_namespace', 'mqtt')
         self.mqtt = None
 
             # Current Weather Values
