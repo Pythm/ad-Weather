@@ -3,7 +3,7 @@
     @Pythm / https://github.com/Pythm
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 from appdaemon import adbase as ad
 import datetime
@@ -106,8 +106,8 @@ class Weather(ad.ADBase):
             except Exception as e:
                 self.ADapi.log(f"Outside temperature is not valid. {e}", level = 'WARNING')
 
-        if 'outside_temperature2' in self.args:
-                self.outside_temperature2 = self.args['outside_temperature2']
+        if 'outside_temperature_2' in self.args:
+                self.outside_temperature2 = self.args['outside_temperature_2']
                 self.ADapi.listen_state(self.outsideTemperature2Updated, self.outside_temperature2,
                     namespace = self.HASS_namespace
                 )
