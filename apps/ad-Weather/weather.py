@@ -3,7 +3,7 @@
     @Pythm / https://github.com/Pythm
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 from appdaemon import adbase as ad
 import datetime
@@ -17,7 +17,7 @@ class Weather(ad.ADBase):
         self.ADapi = self.get_ad_api()
             # Namespaces
         self.HASS_namespace = self.args.get('HASS_namespace', 'default')
-        self.MQTT_namespace = self.args.get('MQTT_namespace', 'default')
+        self.MQTT_namespace = self.args.get('MQTT_namespace', 'mqtt')
         self.mqtt = None
 
             # Current Weather Values
@@ -106,8 +106,8 @@ class Weather(ad.ADBase):
             except Exception as e:
                 self.ADapi.log(f"Outside temperature is not valid. {e}", level = 'WARNING')
 
-        if 'outside_temperature2' in self.args:
-                self.outside_temperature2 = self.args['outside_temperature2']
+        if 'outside_temperature_2' in self.args:
+                self.outside_temperature2 = self.args['outside_temperature_2']
                 self.ADapi.listen_state(self.outsideTemperature2Updated, self.outside_temperature2,
                     namespace = self.HASS_namespace
                 )
