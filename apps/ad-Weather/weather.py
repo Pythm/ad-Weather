@@ -207,16 +207,16 @@ class Weather(ad.ADBase):
             )
 
     def send_weather_update(self):
-        """ Sends a new event with updated sensor data
-        """
-        if self.ADapi.datetime(aware=True) - self.weather_event_last_update > datetime.timedelta(minutes = 5):
-            self.ADapi.fire_event('WEATHER_CHANGE',
-                temp = self.out_temp,
-                rain = self.rain_amount,
-                wind = self.wind_amount,
-                lux = self.out_lux,
-                cloud_cover = self.cloud_cover,
-                namespace = self.HASS_namespace
+        """Sends a new event with updated sensor data"""
+        if self.ADapi.datetime(aware=True) - self.weather_event_last_update > datetime.timedelta(minutes=5):
+            self.ADapi.fire_event(
+                'WEATHER_CHANGE',
+                temp=float(self.out_temp),
+                rain=float(self.rain_amount),
+                wind=float(self.wind_amount),
+                lux=float(self.out_lux),
+                cloud_cover=int(self.cloud_cover),
+                namespace=self.HASS_namespace
             )
             self.weather_event_last_update = self.ADapi.datetime(aware=True)
 
@@ -257,7 +257,7 @@ class Weather(ad.ADBase):
         state = self.ADapi.get_state(self.weather_sensor,
                     namespace = self.HASS_namespace
                 )
-        if state in ['snowy', 'rainy', 'rainy_snowy']:
+        if state in ('snowy', 'rainy', 'rainy_snowy'):
             weather_rain_amount = 1.0
         else:
             weather_rain_amount = 0.0
@@ -349,29 +349,22 @@ class Weather(ad.ADBase):
             self.ADapi.log(f"Not able to get new outlux. ValueError: {ve}", level = 'DEBUG')
         except TypeError as te:
             self.ADapi.log(f"Not able to get new outlux. TypeError: {te}", level = 'DEBUG')
-        except Exception as e:
-            self.ADapi.log(f"Not able to get new outlux. Exception: {e}", level = 'WARNING')
         else:
-            self.newOutLux()
+            self._newOutLux()
 
-    def out_lux_event_MQTT(self, event_name, data, kwargs) -> None:
+    def out_lux_event_MQTT(self, event_name, data, **kwargs) -> None:
         """ Updates lux data from MQTT event.
         """
         lux_data = json.loads(data['payload'])
-        if 'illuminance_lux' in lux_data:
-            if self.outLux1 != float(lux_data['illuminance_lux']):
-                self.outLux1 = float(lux_data['illuminance_lux']) # Zigbee sensor
-                self.newOutLux()
-        elif 'illuminance' in lux_data:
-            if self.outLux1 != float(lux_data['illuminance']):
-                self.outLux1 = float(lux_data['illuminance']) # Zigbee sensor
-                self.newOutLux()
-        elif 'value' in lux_data:
-            if self.outLux1 != float(lux_data['value']):
-                self.outLux1 = float(lux_data['value']) # Zwave sensor
-                self.newOutLux()
+        match lux_data:
+            case {'illuminance': illuminance} if self.outLux1 != float(illuminance):
+                self.outLux1 = float(illuminance) # Zigbee sensor
+                self._newOutLux()
+            case {'value': value} if self.outLux1 != float(value):
+                self.outLux1 = float(value) # Zwave sensor
+                self._newOutLux()
 
-    def newOutLux(self) -> None:
+    def _newOutLux(self) -> None:
         """ Sets new lux data after comparing sensor 1 and 2 and time since the other was last updated.
         """
         if (
@@ -396,26 +389,21 @@ class Weather(ad.ADBase):
         except Exception as e:
             self.ADapi.log(f"Not able to get new outlux. Exception: {e}", level = 'WARNING')
         else:
-            self.newOutLux2()
+            self._newOutLux2()
 
-    def out_lux_event_MQTT2(self, event_name, data, kwargs) -> None:
+    def out_lux_event_MQTT2(self, event_name, data, **kwargs) -> None:
         """ Updates lux data from MQTT event.
         """
         lux_data = json.loads(data['payload'])
-        if 'illuminance_lux' in lux_data:
-            if self.outLux2 != float(lux_data['illuminance_lux']):
-                self.outLux2 = float(lux_data['illuminance_lux']) # Zigbee sensor
-                self.newOutLux2()
-        elif 'illuminance' in lux_data:
-            if self.outLux2 != float(lux_data['illuminance']):
-                self.outLux2 = float(lux_data['illuminance']) # Zigbee sensor
-                self.newOutLux2()
-        elif 'value' in lux_data:
-            if self.outLux2 != float(lux_data['value']):
-                self.outLux2 = float(lux_data['value']) # Zwave sensor
-                self.newOutLux2()
+        match lux_data:
+            case {'illuminance': illuminance} if self.outLux2 != float(illuminance):
+                self.outLux2 = float(illuminance) # Zigbee sensor
+                self._newOutLux2()
+            case {'value': value} if self.outLux2 != float(value):
+                self.outLux2 = float(value) # Zwave sensor
+                self._newOutLux2()
 
-    def newOutLux2(self) -> None:
+    def _newOutLux2(self) -> None:
         """ Sets new lux data after comparing sensor 1 and 2 and time since the other was last updated.
         """
         if (
