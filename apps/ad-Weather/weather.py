@@ -3,12 +3,15 @@
     @Pythm / https://github.com/Pythm
 """
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 from appdaemon import adbase as ad
-import datetime
-import math
+from datetime import timedelta
 import json
+
+TEMP_STALE_MINUTES  = 20
+LUX_STALE_MINUTES   = 15
+EVENT_THROTTLE_MIN  = 3
 
 class Weather(ad.ADBase):
 
@@ -18,58 +21,48 @@ class Weather(ad.ADBase):
             # Namespaces
         self.HASS_namespace = self.args.get('HASS_namespace', 'default')
         self.MQTT_namespace = self.args.get('MQTT_namespace', 'mqtt')
+
         self.mqtt = None
+        now = self.ADapi.datetime(aware=True)
 
             # Current Weather Values
         self.out_temp:float = 10.0
-        self.outTemp1:float = 10.0
-        self.outTemp2:float = 10.0
-        self.outTemp_last_update1 = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20) # Helpers for last updated when two outdoor lux sensors in use
-        self.outTemp_last_update2 = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
+        self.out_temp_1:float = 10.0
+        self.out_temp_2:float = 10.0
+        self.out_temp_1_last_update = now - timedelta(minutes = TEMP_STALE_MINUTES)
+        self.out_temp_2_last_update = now - timedelta(minutes = TEMP_STALE_MINUTES)
 
         self.rain_amount:float = 0.0
-        self.rain_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
+        self.rain_last_update = now - timedelta(minutes = TEMP_STALE_MINUTES)
         self.wind_amount:float = 0.0
-        self.wind_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
+        self.wind_last_update = now - timedelta(minutes = TEMP_STALE_MINUTES)
 
         self.out_lux:float = 0.0
-        self.outLux1:float = 0.0
-        self.outLux2:float = 0.0
-        self.lux_last_update1 = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
-        self.lux_last_update2 = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
+        self.out_lux_1:float = 0.0
+        self.out_lux_2:float = 0.0
+        self.out_lux_1_last_update = now - timedelta(minutes = LUX_STALE_MINUTES)
+        self.out_lux_2_last_update = now - timedelta(minutes = LUX_STALE_MINUTES)
         self.cloud_cover:int = 0
+
+        self.weather_event_last_update = now - timedelta(minutes = EVENT_THROTTLE_MIN)
 
             # Weather sensors
         self.weather_sensor = self.args.get('weather', None)
-        self.outside_temperature = None
-        self.outside_temperature2 = None
-        self.backup_temp_handler = None
 
-        self.rain_sensor = self.args.get('rain_sensor', None)
-        self.backup_rain_handler = None
-        self.anemometer = self.args.get('anemometer', None)
-        self.backup_wind_handler = None
-
-        self.weather_event_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
-
-            # Setup Outside temperatures
+            # Setup Weater sensors
         if self.weather_sensor is None:
             sensor_states = self.ADapi.get_state(entity='weather', namespace = self.HASS_namespace)
             for sensor_id, sensor_states in sensor_states.items():
                 if 'weather.' in sensor_id:
-                    self.weather_sensor = sensor_id
                     try:
-                        self.out_temp = float(self.ADapi.get_state(self.weather_sensor,
+                        self.out_temp = float(self.ADapi.get_state(sensor_id,
                             attribute = 'temperature',
                             namespace = self.HASS_namespace
                         ))
-                    except Exception as err:
-                        self.ADapi.log(
-                            f"Was not able to get temperature from {self.weather_sensor}. "
-                            f"Please use https://www.home-assistant.io/integrations/met/ or make a pull requeset to support other integrations. {err}",
-                            level = 'INFO'
-                        )
+                    except Exception:
+                        pass
                     else:
+                        self.weather_sensor = sensor_id
                         break
 
         if self.weather_sensor:
@@ -89,126 +82,109 @@ class Weather(ad.ADBase):
                     level = 'INFO'
                 )
 
-        if 'outside_temperature' in self.args:
-            self.outside_temperature = self.args['outside_temperature']
-            self.ADapi.listen_state(self.outsideTemperatureUpdated, self.outside_temperature,
+        if (out_temp_sensor := self.args.get('outside_temperature')):
+            self.ADapi.listen_state(self._out_temp_updated, out_temp_sensor,
                 namespace = self.HASS_namespace
             )
             try:
-                self.out_temp = float(self.ADapi.get_state(self.outside_temperature,
+                self.out_temp = float(self.ADapi.get_state(out_temp_sensor,
                     namespace = self.HASS_namespace
                 ))
             except (ValueError, TypeError) as ve:
-                self.ADapi.log(
-                    f"Was not able to get temperature from {self.outside_temperature}. {ve}",
-                    level = 'DEBUG'
-                )
-            except Exception as e:
-                self.ADapi.log(f"Outside temperature is not valid. {e}", level = 'WARNING')
+                pass
 
-        if 'outside_temperature_2' in self.args:
-                self.outside_temperature2 = self.args['outside_temperature_2']
-                self.ADapi.listen_state(self.outsideTemperature2Updated, self.outside_temperature2,
+        if (out_temp_sensor := self.args.get('outside_temperature_MQTT')):
+            if not self.mqtt:
+                self.mqtt = self.get_plugin_api("MQTT")
+
+            self.mqtt.mqtt_subscribe(out_temp_sensor)
+            self.mqtt.listen_event(self._out_temp_mqtt_event, "MQTT_MESSAGE",
+                topic = out_temp_sensor,
+                namespace = self.MQTT_namespace
+            )
+
+        if (out_temp_sensor_2 := self.args.get('outside_temperature_2')):
+                self.ADapi.listen_state(self._out_temp_2_updated, out_temp_sensor_2,
                     namespace = self.HASS_namespace
                 )
 
-        # TODO: Add MQTT outdoor temperature sensor
+        if (out_temp_sensor_2 := self.args.get('outside_temperature_MQTT_2')):
+            if not self.mqtt:
+                self.mqtt = self.get_plugin_api("MQTT")
 
-            # Check if there are sensors to use
-        if (
-            self.outside_temperature is None 
-            and self.weather_sensor is None
-        ):
-            self.ADapi.log(
-                "Outside temperature not configured. Please provide sensors or install Met.no in Home Assistant. "
-                "https://www.home-assistant.io/integrations/met/",
-                level = 'WARNING'
+            self.mqtt.mqtt_subscribe(out_temp_sensor_2)
+            self.mqtt.listen_event(self._out_temp_2_mqtt_event, "MQTT_MESSAGE",
+                topic = out_temp_sensor_2,
+                namespace = self.MQTT_namespace
             )
-            self.ADapi.log("Aborting weather setup", level = 'WARNING')
-            return
 
             # Setup Rain sensor
-        if self.rain_sensor:
-            self.ADapi.listen_state(self.rainSensorUpdated, self.rain_sensor,
+        if (rain_sensor := self.args.get('rain_sensor')):
+            self.ADapi.listen_state(self._rain_amount_updated, rain_sensor,
                 namespace = self.HASS_namespace
             )
             try:
-                self.rain_amount = float(self.ADapi.get_state(self.rain_sensor,
+                self.rain_amount = float(self.ADapi.get_state(rain_sensor,
                     namespace = self.HASS_namespace
                 ))
-            except (ValueError, TypeError) as ve:
-                self.ADapi.log(
-                    f"Was not able to get rain amount from {self.rain_sensor}. {ve}",
-                    level = 'DEBUG'
-                )
-            except Exception as e:
-                self.ADapi.log(f"Rain sensor not valid. {e}", level = 'WARNING')
-                self.rain_amount = 0.0
+            except (ValueError, TypeError):
+                pass
 
             # Setup Wind sensor
-        if self.anemometer:
-            self.ADapi.listen_state(self.anemometerUpdated, self.anemometer,
+        if (anemometer := self.args.get('anemometer')):
+            self.ADapi.listen_state(self._wind_amount_updated, anemometer,
                 namespace = self.HASS_namespace
             )
             try:
-                self.wind_amount = float(self.ADapi.get_state(self.anemometer,
+                self.wind_amount = float(self.ADapi.get_state(anemometer,
                     namespace = self.HASS_namespace
                 ))
-            except ValueError as ve:
-                self.ADapi.log(
-                    f"Was not able to get wind_speed from {self.anemometer}. {ve}",
-                    level = 'DEBUG'
-                )
-            except Exception as e:
-                self.ADapi.log(f"Anemometer sensor not valid. {e}", level = 'WARNING')
-                self.wind_amount = 0.0
+            except (ValueError, TypeError):
+                pass
 
             # Setup Outdoor Lux sensor
-        if 'OutLux_sensor' in self.args:
-            lux_sensor = self.args['OutLux_sensor']
-            self.ADapi.listen_state(self.out_lux_state, lux_sensor,
-                namespace = self.HASS_namespace
-            )
-            new_lux = self.ADapi.get_state(lux_sensor,
+        if (lux_sensor := self.args.get('OutLux_sensor')):
+            self.ADapi.listen_state(self._out_lux_updated, lux_sensor,
                 namespace = self.HASS_namespace
             )
             try:
-                self.out_lux = float(new_lux)
-            except ValueError as ve:
-                self.out_lux:float = 0.0
-                self.ADapi.log(f"Not able to set Rain amount. Exception: {ve}", level = 'DEBUG')
-            except Exception as e:
-                self.out_lux:float = 0.0
-                self.ADapi.log(f"Not able to set Rain amount. Exception: {e}", level = 'INFO')
+                self.out_lux = float(self.ADapi.get_state(lux_sensor,
+                    namespace = self.HASS_namespace
+                ))
+            except (ValueError, TypeError):
+                pass
 
-        elif 'OutLuxMQTT' in self.args:
+        if (lux_sensor := self.args.get('OutLuxMQTT')):
             if not self.mqtt:
                 self.mqtt = self.get_plugin_api("MQTT")
-            out_lux_sensor = self.args['OutLuxMQTT']
-            self.mqtt.mqtt_subscribe(out_lux_sensor)
-            self.mqtt.listen_event(self.out_lux_event_MQTT, "MQTT_MESSAGE",
-                topic = out_lux_sensor,
+
+            self.mqtt.mqtt_subscribe(lux_sensor)
+            self.mqtt.listen_event(self._out_lux_mqtt_event, "MQTT_MESSAGE",
+                topic = lux_sensor,
                 namespace = self.MQTT_namespace
             )
 
-        if 'OutLux_sensor_2' in self.args:
-            lux_sensor = self.args['OutLux_sensor_2']
-            self.ADapi.listen_state(self.out_lux_state2, lux_sensor,
+        if (lux_sensor_2 := self.args.get('OutLux_sensor_2')):
+            self.ADapi.listen_state(self._out_lux_2_updated, lux_sensor_2,
                 namespace = self.HASS_namespace
             )
-        elif 'OutLuxMQTT_2' in self.args:
+
+        if (lux_sensor_2 := self.args.get('OutLuxMQTT_2')):
             if not self.mqtt:
                 self.mqtt = self.get_plugin_api("MQTT")
-            out_lux_sensor = self.args['OutLuxMQTT_2']
-            self.mqtt.mqtt_subscribe(out_lux_sensor)
-            self.mqtt.listen_event(self.out_lux_event_MQTT2, "MQTT_MESSAGE",
-                topic = out_lux_sensor,
+
+            self.mqtt.mqtt_subscribe(lux_sensor_2)
+            self.mqtt.listen_event(self._out_lux_2_mqtt_event, "MQTT_MESSAGE",
+                topic = lux_sensor_2,
                 namespace = self.MQTT_namespace
             )
 
-    def send_weather_update(self):
+
+    def send_weather_update(self, force: bool = False) -> None:
         """Sends a new event with updated sensor data"""
-        if self.ADapi.datetime(aware=True) - self.weather_event_last_update > datetime.timedelta(minutes=5):
+
+        now = self.ADapi.datetime(aware=True)
+        if force or now - self.weather_event_last_update > timedelta(minutes=EVENT_THROTTLE_MIN):
             self.ADapi.fire_event(
                 'WEATHER_CHANGE',
                 temp=float(self.out_temp),
@@ -218,38 +194,44 @@ class Weather(ad.ADBase):
                 cloud_cover=int(self.cloud_cover),
                 namespace=self.HASS_namespace
             )
-            self.weather_event_last_update = self.ADapi.datetime(aware=True)
+            self.weather_event_last_update = now
 
         # Set proper value when weather sensors is updated
-    def outsideTemperatureUpdated(self, entity, attribute, old, new, kwargs) -> None:
-        """ Updates out temperature from sensor
-        """
+    def _out_temp_updated(self, entity, attribute, old, new, kwargs) -> None:
+        now = self.ADapi.datetime(aware=True)
         try:
-            self.outTemp1 = float(new)
-        except (ValueError, TypeError) as ve:
-            self.ADapi.log(
-                f"Was not able to get temperature from {self.outside_temperature}. {ve}",
-                level = 'DEBUG'
-            )
-        else:
-            self.newOutTemp()
+            temp = float(new)
+        except (ValueError, TypeError):
+            return
+        self.out_temp_1 = temp
+        self._choose_temperature(
+            new=temp,
+            other=self.out_temp_2,
+            other_last=self.out_temp_2_last_update,
+        )
+        self.out_temp_1_last_update = now
 
-    def outsideTemperature2Updated(self, entity, attribute, old, new, kwargs) -> None:
-        """ Updates out temperature from sensor
-        """
+    def _out_temp_mqtt_event(self, event_name, data, **kwargs) -> None:
+        self._handle_mqtt_temp(data, attr='out_temp_1')
+
+    def _out_temp_2_updated(self, entity, attribute, old, new, kwargs) -> None:
+        now = self.ADapi.datetime(aware=True)
         try:
-            self.outTemp2 = float(new)
-        except (ValueError, TypeError) as ve:
-            self.ADapi.log(
-                f"Was not able to get temperature from {self.outside_temperature2}. {ve}",
-                level = 'DEBUG'
-            )
-        else:
-            self.newOutTemp2()
+            temp = float(new)
+        except (ValueError, TypeError):
+            return
+        self.out_temp_2 = temp
+        self._choose_temperature(
+            new=temp,
+            other=self.out_temp_1,
+            other_last=self.out_temp_1_last_update,
+        )
+        self.out_temp_2_last_update = now
+
+    def _out_temp_2_mqtt_event(self, event_name, data, **kwargs) -> None:
+        self._handle_mqtt_temp(data, attr='out_temp_2')
 
     def WeatherSensorUpdated(self, entity, attribute, old, new, kwargs) -> None:
-        """ Updates out temperature from backup sensor
-        """
         weather_temp:float = 10.0
         weather_rain_amount:float = 0.0
         weather_wind_amount:float = 0.0
@@ -275,147 +257,179 @@ class Weather(ad.ADBase):
                                 namespace = self.HASS_namespace
                             ))
 
-        except TypeError as te:
-            self.ADapi.log(f"Not able to get all values from {self.weather_sensor}. {te}", level = 'DEBUG')
-        else:
-            if (
-                self.ADapi.datetime(aware=True) - self.outTemp_last_update1 > datetime.timedelta(minutes = 20)
-                and self.ADapi.datetime(aware=True) - self.outTemp_last_update2 > datetime.timedelta(minutes = 20)
-            ):
-                self.out_temp = weather_temp
+        except (ValueError, TypeError):
+            return
 
-            if self.ADapi.datetime(aware=True) - self.rain_last_update > datetime.timedelta(minutes = 20):
-                self.rain_amount = weather_rain_amount
-            
-            if self.ADapi.datetime(aware=True) - self.wind_last_update > datetime.timedelta(minutes = 20):  
-                self.wind_amount = weather_wind_amount
-
-            self.send_weather_update()
-
-    def newOutTemp(self) -> None:
-        """ Sets new out temp after comparing sensor 1 and 2 and time since the other was last updated.
-        """
+        now = self.ADapi.datetime(aware=True)
         if (
-            self.ADapi.datetime(aware=True) - self.outTemp_last_update2 > datetime.timedelta(minutes = 20)
-            or self.outTemp2 >= self.outTemp1
+            now - self.out_temp_1_last_update > timedelta(minutes = TEMP_STALE_MINUTES)
+            and now - self.out_temp_2_last_update > timedelta(minutes = TEMP_STALE_MINUTES)
         ):
-            self.out_temp = self.outTemp1
-            self.send_weather_update()
+            self.out_temp = weather_temp
 
-        self.outTemp_last_update1 = self.ADapi.datetime(aware=True)
+        if now - self.rain_last_update > timedelta(minutes = TEMP_STALE_MINUTES):
+            self.rain_amount = weather_rain_amount
+        
+        if now - self.wind_last_update > timedelta(minutes = TEMP_STALE_MINUTES):  
+            self.wind_amount = weather_wind_amount
 
-    def newOutTemp2(self) -> None:
-        """ Sets new out temp after comparing sensor 1 and 2 and time since the other was last updated.
-        """
-        if (
-            self.ADapi.datetime(aware=True) - self.outTemp_last_update1 > datetime.timedelta(minutes = 20)
-            or self.outTemp1 >= self.outTemp2
-        ):
-            self.out_temp = self.outTemp2
-            self.send_weather_update()
+        self.send_weather_update()
 
-        self.outTemp_last_update2 = self.ADapi.datetime(aware=True)
 
-    def rainSensorUpdated(self, entity, attribute, old, new, kwargs) -> None:
-        """ Updates rain amount from sensor
-        """
+    def _rain_amount_updated(self, entity, attribute, old, new, kwargs) -> None:
         try:
             self.rain_amount = float(new)
-        except ValueError as ve:
-            self.ADapi.log(f"Not able to set new rain amount: {new}. {ve}", level = 'DEBUG')
-        else:
-            self.rain_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
-            self.send_weather_update()
+        except (ValueError, TypeError):
+            return
 
-    def anemometerUpdated(self, entity, attribute, old, new, kwargs) -> None:
-        """ Updates WIND_AMOUNT from sensor
-        """
+        self.rain_last_update = self.ADapi.datetime(aware=True)
+        self.send_weather_update()
+
+    def _wind_amount_updated(self, entity, attribute, old, new, kwargs) -> None:
         try:
             self.wind_amount = float(new)
-        except ValueError as ve:
-            self.ADapi.log(f"Not able to set new wind amount: {new}. {ve}", level = 'DEBUG')
-        else:
-            self.wind_last_update = self.ADapi.datetime(aware=True) - datetime.timedelta(minutes = 20)
-            self.send_weather_update()
+        except (ValueError, TypeError):
+            return
+
+        self.wind_last_update = self.ADapi.datetime(aware=True)
+        self.send_weather_update()
 
         # Lux / weather
-    def out_lux_state(self, entity, attribute, old, new, kwargs) -> None:
-        """ Updates lux data from sensors.
-        """
+    def _out_lux_updated(self, entity, attribute, old, new, kwargs) -> None:
         try:
-            if self.outLux1 != float(new):
-                self.outLux1 = float(new)
-        except ValueError as ve:
-            self.ADapi.log(f"Not able to get new outlux. ValueError: {ve}", level = 'DEBUG')
-        except TypeError as te:
-            self.ADapi.log(f"Not able to get new outlux. TypeError: {te}", level = 'DEBUG')
+            value = float(new)
+        except (ValueError, TypeError):
+            return
+        if value != self.out_lux_1:
+            self._choose_lux(
+                new=value,
+                other=self.out_lux_2,
+                other_last=self.out_lux_2_last_update,
+            )
+            self.out_lux_1 = value
+            self.out_lux_1_last_update = self.ADapi.datetime(aware=True)
+
+    def _out_lux_mqtt_event(self, event_name, data, **kwargs) -> None:
+        self._handle_mqtt_lux(data, attr='out_lux_1')
+
+    def _out_lux_2_updated(self, entity, attribute, old, new, kwargs) -> None:
+        try:
+            value = float(new)
+        except (ValueError, TypeError):
+            return
+        if value != self.out_lux_2:
+            self._choose_lux(
+                new=value,
+                other=self.out_lux_1,
+                other_last=self.out_lux_1_last_update,
+            )
+            self.out_lux_2 = value
+            self.out_lux_2_last_update = self.ADapi.datetime(aware=True)
+
+    def _out_lux_2_mqtt_event(self, event_name, data, **kwargs) -> None:
+        self._handle_mqtt_lux(data, attr='out_lux_2')
+
+    def _handle_mqtt_temp(self, data, attr):
+        payload = data.get('payload')
+        if isinstance(payload, bytes):
+            try:
+                payload_json = payload.decode()
+            except Exception:
+                return
+
+        try:
+            payload_json = json.loads(payload)
+        except Exception:
+            payload_json = payload
+
+        try:
+            if isinstance(payload_json, dict):
+                if 'temperature' in payload_json:
+                    temp_val = float(payload_json['temperature'])
+                else:
+                    temp_val = float(next(v for v in payload_json.values()
+                                        if isinstance(v, (int, float, str))))
+            else:
+                temp_val = float(payload_json)
+        except Exception:
+            return
+
+        if temp_val != getattr(self, attr):
+            setattr(self, attr, temp_val)
+        now = self.ADapi.datetime(aware=True)
+        if attr == 'out_temp_1':
+            self._choose_temperature(
+                new=temp_val,
+                other=self.out_temp_2,
+                other_last=self.out_temp_2_last_update,
+            )
+            self.out_temp_1_last_update = now
         else:
-            self._newOutLux()
+            self._choose_temperature(
+                new=temp_val,
+                other=self.out_temp_1,
+                other_last=self.out_temp_1_last_update,
+            )
+            self.out_temp_2_last_update = now
 
-    def out_lux_event_MQTT(self, event_name, data, **kwargs) -> None:
-        """ Updates lux data from MQTT event.
-        """
-        lux_data = json.loads(data['payload'])
-        match lux_data:
-            case {'illuminance': illuminance} if self.outLux1 != float(illuminance):
-                self.outLux1 = float(illuminance) # Zigbee sensor
-                self._newOutLux()
-            case {'value': value} if self.outLux1 != float(value):
-                self.outLux1 = float(value) # Zwave sensor
-                self._newOutLux()
-
-    def _newOutLux(self) -> None:
-        """ Sets new lux data after comparing sensor 1 and 2 and time since the other was last updated.
-        """
-        if (
-            self.ADapi.datetime(aware=True) - self.lux_last_update2 > datetime.timedelta(minutes = 15)
-            or self.outLux1 >= self.outLux2
-        ):
-            self.out_lux = self.outLux1
+    def _choose_temperature(self, new, other, other_last):
+        now = self.ADapi.datetime(aware=True)
+        if now - other_last > timedelta(minutes=TEMP_STALE_MINUTES) or new <= other:
+            self.out_temp = new
             self.send_weather_update()
 
-        self.lux_last_update1 = self.ADapi.datetime(aware=True)
+    def _handle_mqtt_lux(self, data, attr):
+        payload = data.get('payload')
+        if isinstance(payload, bytes):
+            try:
+                payload_json = payload.decode()
+            except Exception:
+                return
 
-    def out_lux_state2(self, entity, attribute, old, new, kwargs) -> None:
-        """ Updates lux data from sensors.
-        """
         try:
-            if self.outLux2 != float(new):
-                self.outLux2 = float(new)
-        except ValueError as ve:
-            self.ADapi.log(f"Not able to get new outlux. ValueError: {ve}", level = 'DEBUG')
-        except TypeError as te:
-            self.ADapi.log(f"Not able to get new outlux. TypeError: {te}", level = 'DEBUG')
+            payload_json = json.loads(payload)
+        except Exception:
+            payload_json = payload
+
+        try:
+            if isinstance(payload_json, dict):
+                old_attr = getattr(self, attr)
+                match payload_json:
+                    case {'illuminance': illuminance} if old_attr != float(illuminance):
+                        value = float(illuminance) # Zigbee sensor
+                    case {'value': value} if old_attr != float(value):
+                        value = float(value) # Zwave sensor
+                    case _:
+                        return
+            else:
+                value = float(payload_json)
         except Exception as e:
-            self.ADapi.log(f"Not able to get new outlux. Exception: {e}", level = 'WARNING')
-        else:
-            self._newOutLux2()
+            return
+        if value != getattr(self, attr):
+            setattr(self, attr, value)
+            now = self.ADapi.datetime(aware=True)
+            if attr == 'out_lux_1':
+                self._choose_lux(
+                    new=value,
+                    other=self.out_lux_2,
+                    other_last=self.out_lux_2_last_update,
+                )
+                self.out_lux_1_last_update = now
+            else:
+                self._choose_lux(
+                    new=value,
+                    other=self.out_lux_1,
+                    other_last=self.out_lux_1_last_update,
+                )
+                self.out_lux_2_last_update = now
 
-    def out_lux_event_MQTT2(self, event_name, data, **kwargs) -> None:
-        """ Updates lux data from MQTT event.
-        """
-        lux_data = json.loads(data['payload'])
-        match lux_data:
-            case {'illuminance': illuminance} if self.outLux2 != float(illuminance):
-                self.outLux2 = float(illuminance) # Zigbee sensor
-                self._newOutLux2()
-            case {'value': value} if self.outLux2 != float(value):
-                self.outLux2 = float(value) # Zwave sensor
-                self._newOutLux2()
-
-    def _newOutLux2(self) -> None:
-        """ Sets new lux data after comparing sensor 1 and 2 and time since the other was last updated.
-        """
-        if (
-            self.ADapi.datetime(aware=True) - self.lux_last_update1 > datetime.timedelta(minutes = 15)
-            or self.outLux2 >= self.outLux1
-        ):
-            self.out_lux = self.outLux2
+    def _choose_lux(self, new, other, other_last):
+        now = self.ADapi.datetime(aware=True)
+        if now - other_last > timedelta(minutes=LUX_STALE_MINUTES) or new >= other:
+            self.out_lux = new
             self.send_weather_update()
 
-        self.lux_last_update2 = self.ADapi.datetime(aware=True)
 
     def getOutTemp(self) -> float:
-        """ Returns outdoor temperature
-        """
+        """ Returns outdoor temperature """
         return self.out_temp

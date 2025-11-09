@@ -1,15 +1,15 @@
 
 # ad-Weather  
-**An AppDaemon weather app that publishes a `WEATHER_CHANGE` event with valid data upon sensor updates to other AppDaemon apps.**  
+**An AppDaemon app that centralises all outdoor weather data and publishes a single `WEATHER_CHANGE` event that can be consumed by any other AppDaemon apps.**  
 ---
 
 ## 🌍 Features  
 - **Publishes `WEATHER_CHANGE` event**: Updates other AppDaemon apps with weather data (e.g., temperature, rain, wind, lux) when sensors change.  
-- **Supports multiple weather sensors**: Uses `outside_temperature` and `outside_temperature_2` for accurate outdoor temperature tracking.  
-- **Lux sensor integration**: Supports up to **two outdoor lux sensors** (e.g., `OutLux_sensor` and `OutLuxMQTT_2`) to determine the highest lux value.  
-- **Fallback to Met.no integration**: Automatically detects weather data from Home Assistant if no explicit `weather` sensor is provided.  
+- **Multi‑sensor support**: Up to two temperature and lux sensors for accurate outdoor temperature and lux tracking.
+- **Home Assistant or MQTT sensors**: For lux and temperature you can use a combination of HA and MQTT sensors.
+- **Fallback to Met.no integration**: Automatically detects a `weather` entity from Home Assistant if no explicit `weather` sensor is provided.
+- **Stale‑sensor handling** Uses a configurable timeout (20 min for temp/rain/wind, 15 min for lux).
 - **Namespace flexibility**: Configurable `HASS_namespace` and `MQTT_namespace` for compatibility with custom setups.  
-- **Used by other apps**: Powers [ad-ClimateCommander](https://github.com/Pythm/ad-ClimateCommander) and [ad-ElectricalManagement](https://github.com/Pythm/ad-ElectricalManagement) for weather-dependent automation.  
 ---
 
 ## 📱 Supported Platforms  
@@ -18,66 +18,80 @@ This app is designed for use with:
 - **[AppDaemon](https://github.com/AppDaemon/appdaemon)**: A Python execution environment for writing automation apps.  
 ---
 
-## 🔄 How It Works  
-This app acts as a **"helper"** to other apps by listening to weather sensor updates and publishing a `WEATHER_CHANGE` event with the latest data.  
-
-To listen for weather updates in your AppDaemon app:  
-```python
-self.ADapi.listen_event(self.weather_event, 'WEATHER_CHANGE', namespace=self.HASS_namespace)
-```  
----
-
 ## 🛠️ Installation  
-1. **Clone the repository** into your AppDaemon `apps` directory:  
+1. **Clone the repository** into your AppDaemon `apps` directory:
+
    ```bash
    git clone https://github.com/Pythm/ad-Weather.git /path/to/appdaemon/apps/
    ```  
-2. **Add configuration** to a `.yaml` or `.toml` file:  
-   ```yaml
+
+2. **Add to your AppDaemon configuration** (`apps.yaml` or `apps.toml`)
+
+```yaml
    weather:
      module: weather
      class: Weather
      weather: weather.forecast_home
      outside_temperature: sensor.outtemp
      outside_temperature_2: sensor.outtemp2
+     outside_temperature_MQTT: zigbee2mqtt/outdoor_hue_lux
+     outside_temperature_MQTT_2: zigbee2mqtt/outdoor_hue_lux_2
+     OutLux_sensor: sensor.outdoor_hue_lux_illuminance
+     OutLux_sensor_2: sensor.outdoor_hue_lux_illuminance_2
+     OutLuxMQTT: zigbee2mqtt/outdoor_hue_lux
+     OutLuxMQTT_2: zigbee2mqtt/outdoor_hue_lux_2
      rain_sensor: sensor.rain
      anemometer: sensor.wind
-     OutLux_sensor: sensor.lux
-     OutLuxMQTT_2: zigbee2mqtt/OutdoorHueLux
      HASS_namespace: default
      MQTT_namespace: mqtt
-   ```  
+```  
 ---
 
-## 📌 Configuration Details  
-### Key Definitions  
-| Key                      | Type   | Default         | Description                                                                 |
-|--------------------------|--------|------------------|-----------------------------------------------------------------------------|
-| `weather`                | string | (optional)       | Home Assistant weather sensor or Met.no integration.                      |
-| `outside_temperature`    | string | (optional)       | Primary outdoor temperature sensor.                                         |
-| `outside_temperature_2`  | string | (optional)       | Secondary outdoor temperature sensor.                                       |
-| `rain_sensor`            | string | (optional)       | Sensor to detect rain (state: `snowy`, `rainy`, `rainy_snowy`).            |
-| `anemometer`             | string | (optional)       | Wind speed sensor.                                                          |
-| `OutLux_sensor`          | string | (optional)       | Home Assistant outdoor lux sensor.                                         |
-| `OutLuxMQTT`             | string | (optional)       | MQTT outdoor lux sensor.                                                   |
-| `HASS_namespace`         | string | `"default"`      | Home Assistant namespace (optional).                                        |
-| `MQTT_namespace`         | string | `"mqtt"`         | MQTT namespace (optional).                                                  |
+## 🔄 How It Works  
+This app acts as a **"helper"** to other apps by listening to weather sensor updates and publishing a `WEATHER_CHANGE` event with the latest data.  
 
-> ⚠️ Note: Only **two** lux sensors are supported but a combination of HA and MQTT is possible. The second sensor must end with `_2`.  
+To listen for weather updates in your AppDaemon app:  
+```python
+self.ADapi.listen_event(self.weather_event, 'WEATHER_CHANGE')
+```  
+---
+
 
 ---
 
-## 📌 Tips & Best Practices  
-- **Use multiple sensors**: Configure a second `outside_temperature`, `OutLux_sensor`, or `OutLuxMQTT_2` ending with `_2` for redundancy and accuracy.  
-- **Fallback to Met.no**: If no `weather` sensor is defined, the app will attempt to find a `weather` sensor in Home Assistant.  
-- **Rain detection**: The app assumes a rain amount of `1.0` if the `rain_sensor` state is `snowy`, `rainy`, or `rainy_snowy`.  
-- **Lux sensor behavior**: The app retains the last updated value if one of the sensors hasn’t updated in 15 minutes.  
-- **Namespace configuration**: Explicitly define `HASS_namespace` and `MQTT_namespace` if you’re using custom namespaces.  
+## 🔧 Configuration Parameters
+
+| Key | Type | Default | Description |
+| --- | ---- | ------- | ----------- |
+| `weather` | string | *None* | HA `weather` entity (e.g. `weather.forecast_home`).  If omitted, the app looks for any HA weather entity or falls back to Met.no. |
+| `outside_temperature` | string | *None* | Primary outdoor temperature sensor (HA). |
+| `outside_temperature_2` | string | *None* | Secondary outdoor temperature sensor. The app keeps the **lower** value when both are fresh. |
+| `outside_temperature_MQTT` | string | *None* | MQTT topic that publishes temperature. |
+| `outside_temperature_MQTT_2` | string | *None* | Secondary MQTT temperature topic. |
+| `OutLux_sensor` | string | *None* | HA lux sensor (e.g. `sensor.outdoor_lux`). |
+| `OutLux_sensor_2` | string | *None* | Secondary lux sensor. The app keeps the **higher** value when both are fresh. |
+| `OutLuxMQTT` | string | *None* | MQTT topic that publishes lux. |
+| `OutLuxMQTT_2` | string | *None* | Secondary MQTT lux topic. |
+| `rain_sensor` | string | *None* | Rain sensor. |
+| `anemometer` | string | *None* | Wind speed sensor. |
+| `HASS_namespace` | string | `"default"` | Home Assistant namespace. |
+| `MQTT_namespace` | string | `"mqtt"` | MQTT namespace. |
+
+> **Tip** – For any sensor you only need to specify *one* source.  
+> If you want redundancy, add a second sensor ending with `_2`.  
+> The app automatically discards stale data (see below).
 
 ---
 
-## 📈 Roadmap  
-- Add support for MQTT temperature sensors
+## ⏱️ Sensor staleness
+
+| Sensor type | Timeout | When is it ignored? |
+| ----------- | ------- | ------------------- |
+| Temperature / Rain / Wind | 20 min | If older than this, the value is considered stale and will be replaced by another source. |
+| Lux | 15 min | Same as above. |
+
+When both sources are fresh, the temperature sensor will keep the **lower** of the two values (e.g. a sensor in shade).  
+For lux, the **higher** value is kept (e.g. a sensor in full sun).  
 
 ---
 
@@ -86,15 +100,20 @@ self.ADapi.listen_event(self.weather_event, 'WEATHER_CHANGE', namespace=self.HAS
 
 ---
 
-## 🙋 Contributing  
-Found a bug or want to suggest a feature? [Open an issue](https://github.com/Pythm/ad-Weather/issues) or [submit a PR](https://github.com/Pythm/ad-Weather/pulls).  
+## 🤝 Contributing
+
+Feel free to open issues or pull requests.  
+Pull‑request guidelines:
+
+1. Fork the repo and create a branch for your feature/bug‑fix.
+2. Write or update tests (if applicable).
+3. Ensure the README stays up‑to‑date.
+4. Submit a pull request.
 
 ---
 
-**ad-Weather by [Pythm](https://github.com/Pythm)**  
-[GitHub](https://github.com/Pythm/ad-Weather)
-
----  
-**Need further assistance?** Reach out on [GitHub](https://github.com/Pythm/ad-Weather).  
+**ad‑Weather** by [Pythm](https://github.com/Pythm)  
+[GitHub repository](https://github.com/Pythm/ad-Weather) |  
+[Issues & PRs](https://github.com/Pythm/ad-Weather/issues)
 
 ---
