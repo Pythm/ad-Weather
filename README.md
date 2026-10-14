@@ -1,6 +1,9 @@
 
 # ad-Weather  
 **An AppDaemon app that centralises all outdoor weather data and publishes a single `WEATHER_CHANGE` event that can be consumed by any other AppDaemon apps.**  
+
+> 🤖 **Set up with an AI assistant:** [LLM.md](LLM.md) describes the configuration of this app, and the [LLM guide](https://github.com/Pythm/Pythm_AppdaemonApps/blob/master/LLM_GUIDE.md) finds your own entity ids in Home Assistant. The assistant asks you how each sensor is used.
+
 ---
 
 ## 🌍 Features  
@@ -8,7 +11,7 @@
 - **Multi‑sensor support**: Up to two temperature and lux sensors for accurate outdoor temperature and lux tracking.
 - **Home Assistant or MQTT sensors**: For lux and temperature you can use a combination of HA and MQTT sensors.
 - **Fallback to a weather entity**: Automatically detects a `weather` entity from Home Assistant (for example Met.no) if no explicit `weather` is provided.
-- **Stale‑sensor handling** Uses a configurable timeout (20 min for temp/rain/wind, 15 min for lux).
+- **Stale‑sensor handling**: A sensor that has not reported for 20 minutes (temp/rain/wind) or 15 minutes (lux) is ignored, and the next source is used.
 - **Namespace flexibility**: Configurable `HASS_namespace` and `MQTT_namespace` for compatibility with custom setups.  
 ---
 
@@ -19,6 +22,8 @@ This app is designed for use with:
 ---
 
 ## 🛠️ Installation  
+> **Not in HACS.** Install by cloning the repository. Other apps (for example [Lightwand](https://github.com/Pythm/ad-Lightwand) and [ClimateCommander](https://github.com/Pythm/ad-ClimateCommander)) are separate repositories that listen to the event; they do not need `dependencies` in the YAML for that.
+
 1. **Clone the repository** into your AppDaemon `apps` directory:
 
    ```bash
@@ -56,9 +61,6 @@ self.ADapi.listen_event(self.weather_event, 'WEATHER_CHANGE')
 ```  
 ---
 
-
----
-
 ## 🔧 Configuration Parameters
 
 | Key | Type | Default | Description |
@@ -79,7 +81,7 @@ self.ADapi.listen_event(self.weather_event, 'WEATHER_CHANGE')
 | `HASS_namespace` | string | `"default"` | Home Assistant namespace. |
 | `MQTT_namespace` | string | `"mqtt"` | MQTT namespace. |
 
-> **Tip** - For any sensor you only need to specify *one* source. For redundancy add a second sensor ending with `_2`.
+> **Tip** - For any sensor you only need to specify *one* source. A `_2` sensor is for **redundancy**: both are combined (lowest temperature, highest lux) and the other is used if one goes silent. A sensor on **another side of the house** should not be a `_2` here: configure it in the Lightwand room or ClimateCommander instead, see [Overriding lux per app](#-overriding-lux-per-app).
 
 ---
 
@@ -118,6 +120,31 @@ def weather_event(self, event_name, data, **kwargs):
 - A Home Assistant sensor is fresh as long as `last_reported` (or `last_updated`) is within the timeout, so a sensor that holds the same value is **not** treated as stale. MQTT sources are fresh when a message arrived within the timeout.
 - When no temperature, rain or wind sensor is fresh, the weather entity is used. Lux has no weather entity fallback: the last value is kept until a sensor reports, or `estimate_lux` is used if no lux sensor is configured.
 - Missing `wind_speed` or `cloud_coverage` on the weather entity only leaves that value `None`.
+
+---
+
+## 🔀 Overriding lux per app
+
+[Lightwand](https://github.com/Pythm/ad-Lightwand) rooms and [ClimateCommander](https://github.com/Pythm/ad-ClimateCommander) can have their own outdoor lux sensors, for example for a room on another side of the house. They use those while they report and fall back to the lux from this app after 20 minutes of silence. Configure your main lux sensor here and the other side's sensor in the room.
+
+---
+
+## ⬆️ Upgrading to 0.2.0
+
+Nothing to change in your configuration. Behaviour that is different:
+
+- Values the app does not have are sent as `None` instead of `10.0` (temp) or `0.0` (rain, wind, lux). Apps that read the event must handle `None`. Current versions of Lightwand and ClimateCommander do.
+- The event contains a new key `wind_unit`. Wind from the weather entity is converted to the unit of your `anemometer` (else km/h).
+- No event is sent until the first value is known (the first one comes within about a minute of startup).
+- MQTT temperature payloads without a `temperature` key are ignored (before, the first number in the payload was used).
+- Temperature and lux are calculated from all stored sensor values every time, so the result follows a sensor in both directions.
+- New optional keys `estimate_lux` and `sun_entity`.
+
+---
+
+## 🤖 Setting it up with an AI assistant
+
+[LLM.md](LLM.md) describes the configuration for an AI assistant. The entity discovery workflow is in the [Pythm_AppdaemonApps LLM guide](https://github.com/Pythm/Pythm_AppdaemonApps/blob/master/LLM_GUIDE.md).
 
 ---
 
